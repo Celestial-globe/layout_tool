@@ -2,8 +2,7 @@
 
 ブラウザだけで動く、スクリーンショットや画像をA4/A3などの用紙上に自由に配置してPNG書き出し・印刷できるツールです。サーバー不要・インストール不要、`index.html` を開くだけで使えます。
 
-**🔗 デモを開く：** `https://<あなたのGitHubユーザー名>.github.io/<リポジトリ名>/`
-（GitHub Pages を有効化すると自動でこのURLが使えます）
+**🔗 デモを開く：** https://celestial-globe.github.io/layout_tool/
 
 ## 主な機能
 
