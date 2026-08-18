@@ -1,0 +1,1590 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>スクリーンショット・レイアウト</title>
+<style>
+  :root{
+    --bg:#e9eaef;
+    --panel:#ffffff;
+    --ink:#1c2030;
+    --ink-soft:#6c7086;
+    --accent:#3a36e0;
+    --accent-soft:#e6e5fc;
+    --line:#d7d9e3;
+    --danger:#e0463a;
+    --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Segoe UI", sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; height:100%;
+    background:var(--bg);
+    font-family:var(--sans);
+    color:var(--ink);
+    overflow:hidden;
+  }
+  .app{ display:flex; flex-direction:column; height:100%; }
+
+  /* ---------- toolbar ---------- */
+  .toolbar{
+    display:flex; align-items:center; gap:18px;
+    padding:12px 20px;
+    background:var(--panel);
+    border-bottom:1px solid var(--line);
+    flex-wrap:wrap;
+    z-index:10;
+  }
+  .brand{
+    font-weight:700; font-size:14px; letter-spacing:.02em;
+    display:flex; align-items:center; gap:8px; margin-right:6px;
+  }
+  .brand .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);}
+  .group{ display:flex; align-items:center; gap:8px; }
+  .group + .group{ padding-left:16px; border-left:1px solid var(--line); }
+  label.field{
+    display:flex; flex-direction:column; gap:3px;
+    font-size:10.5px; color:var(--ink-soft); font-weight:600;
+    letter-spacing:.03em; text-transform:uppercase;
+  }
+  select, input[type=number]{
+    font-family:var(--mono);
+    font-size:13px;
+    border:1px solid var(--line);
+    background:#fff;
+    border-radius:7px;
+    padding:6px 8px;
+    color:var(--ink);
+    outline:none;
+  }
+  select:focus, input[type=number]:focus{ border-color:var(--accent); }
+  input[type=number]{ width:64px; }
+  .dims{
+    font-family:var(--mono); font-size:11px; color:var(--ink-soft);
+    white-space:nowrap;
+  }
+  button{
+    font-family:var(--sans);
+    font-size:13px; font-weight:600;
+    border:1px solid var(--line);
+    background:#fff;
+    color:var(--ink);
+    border-radius:7px;
+    padding:8px 13px;
+    cursor:pointer;
+    display:flex; align-items:center; gap:6px;
+    transition:border-color .12s, background .12s;
+  }
+  button:hover{ border-color:var(--accent); }
+  button.primary{
+    background:var(--accent); color:#fff; border-color:var(--accent);
+  }
+  button.primary:hover{ background:#2f2bc4; }
+  button.ghost{ background:transparent; }
+  button.danger:hover{ border-color:var(--danger); color:var(--danger); }
+  .spacer{ flex:1; }
+  .count{ font-family:var(--mono); font-size:11.5px; color:var(--ink-soft); }
+
+  /* ---------- stage ---------- */
+  .stage{
+    flex:1; position:relative; overflow:auto;
+    display:flex; align-items:center; justify-content:center;
+    padding:40px;
+  }
+  .stage.dragover::after{
+    content:"ここに画像をドロップ";
+    position:absolute; inset:16px;
+    border:2px dashed var(--accent);
+    border-radius:14px;
+    background:rgba(58,54,224,0.06);
+    display:flex; align-items:center; justify-content:center;
+    font-weight:700; color:var(--accent); font-size:16px;
+    pointer-events:none;
+  }
+
+  .paper-wrap{ position:relative; }
+  .paper{
+    background:#fff;
+    box-shadow: 0 1px 2px rgba(20,20,40,.06), 0 18px 40px rgba(20,20,40,.16);
+    position:relative;
+    transform-origin: top left;
+    overflow:hidden;
+  }
+  /* ruler ticks — signature touch */
+  .paper::before, .paper::after{
+    content:""; position:absolute; pointer-events:none;
+  }
+  .paper::before{
+    left:0; top:0; right:0; height:10mm;
+    background-image: repeating-linear-gradient(
+      to right, var(--line) 0 0.4mm, transparent 0.4mm 10mm
+    );
+    background-repeat:no-repeat;
+    opacity:.9;
+  }
+  .paper::after{
+    left:0; top:0; bottom:0; width:10mm;
+    background-image: repeating-linear-gradient(
+      to bottom, var(--line) 0 0.4mm, transparent 0.4mm 10mm
+    );
+    background-repeat:no-repeat;
+    opacity:.9;
+  }
+
+  .tile{
+    position:absolute;
+    cursor:grab;
+    outline:1px solid transparent;
+    touch-action:none;
+    user-select:none;
+  }
+  .tile:active{ cursor:grabbing; }
+  .tile.active{ outline:1.4px solid var(--accent); z-index:999 !important; }
+  .tile img{
+    width:100%; height:100%; display:block; object-fit:fill;
+    pointer-events:none; user-select:none;
+    box-shadow:0 0 0 1px rgba(0,0,0,.06);
+  }
+  .tile .del{
+    position:absolute; top:-9px; right:-9px;
+    width:18px; height:18px; border-radius:50%;
+    background:var(--danger); color:#fff;
+    font-size:12px; line-height:18px; text-align:center;
+    cursor:pointer; opacity:0; transition:opacity .1s;
+    font-family:var(--sans); font-weight:700;
+    box-shadow:0 1px 3px rgba(0,0,0,.3);
+  }
+  .tile:hover .del, .tile.active .del{ opacity:1; }
+  .tile .dup{
+    position:absolute; top:-9px; right:14px;
+    width:18px; height:18px; border-radius:50%;
+    background:var(--accent); color:#fff;
+    font-size:11px; line-height:18px; text-align:center;
+    cursor:pointer; opacity:0; transition:opacity .1s;
+    font-family:var(--sans); font-weight:700;
+    box-shadow:0 1px 3px rgba(0,0,0,.3);
+  }
+  .tile:hover .dup, .tile.active .dup{ opacity:1; }
+  .tile .handle{
+    position:absolute; right:-6px; bottom:-6px;
+    width:13px; height:13px; border-radius:3px;
+    background:var(--accent); border:2px solid #fff;
+    cursor:nwse-resize; opacity:0; transition:opacity .1s;
+    box-shadow:0 1px 3px rgba(0,0,0,.3);
+    touch-action:none;
+  }
+
+  .guide-line{
+    position:absolute;
+    background:var(--accent);
+    pointer-events:none;
+    z-index:9998;
+  }
+  .guide-line.v{ top:0; height:100%; width:0.35mm; }
+  .guide-line.h{ left:0; width:100%; height:0.35mm; }
+  .tile:hover .handle, .tile.active .handle{ opacity:1; }
+
+  /* ---------- captions ---------- */
+  .caption{
+    position:absolute;
+    font-family:var(--sans);
+    font-size:3.1mm;
+    line-height:1.3;
+    color:var(--ink-soft);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    cursor:text;
+    padding:0.3mm 0;
+  }
+  .caption:hover{ color:var(--ink); }
+  .caption[contenteditable="true"]{
+    outline:1px dashed var(--accent);
+    white-space:normal;
+    color:var(--ink);
+    background:#fff;
+  }
+
+  /* ---------- annotation layers ---------- */
+  .anno-layer{ position:absolute; inset:0; z-index:5000; }
+  .anno-text-layer{ position:absolute; inset:0; z-index:5001; pointer-events:none; }
+
+  .anno-shape{ cursor:grab; }
+  .anno-shape.active{ filter: drop-shadow(0 0 0 var(--accent)); }
+
+  .anno-text-wrap{
+    position:absolute;
+    display:inline-block;
+  }
+  .anno-text{
+    font-family:var(--sans);
+    font-weight:700;
+    color:#d0231c;
+    background:rgba(255,255,255,0.82);
+    padding:0.6mm 1.4mm;
+    border-radius:1mm;
+    cursor:grab;
+    pointer-events:auto;
+    touch-action:none;
+    user-select:none;
+    min-width:8mm;
+    border:0.3mm solid transparent;
+    white-space:pre-wrap;
+  }
+  .anno-text-wrap.active .anno-text{ border-color:var(--accent); }
+  .anno-text[contenteditable="true"]{
+    cursor:text; user-select:text; border-color:var(--accent);
+  }
+  .anno-text-wrap .del{
+    position:absolute; top:-9px; right:-9px;
+    width:16px; height:16px; border-radius:50%;
+    background:var(--danger); color:#fff;
+    font-size:11px; line-height:16px; text-align:center;
+    cursor:pointer; opacity:0; transition:opacity .1s;
+    font-weight:700;
+    pointer-events:auto;
+  }
+  .anno-text-wrap:hover .del, .anno-text-wrap.active .del{ opacity:1; }
+
+  /* ---------- tool buttons ---------- */
+  .tool-btn{
+    padding:7px 10px !important;
+  }
+  .tool-btn.on{
+    background:var(--accent) !important;
+    color:#fff !important;
+    border-color:var(--accent) !important;
+  }
+
+  .empty-hint{
+    position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    flex-direction:column; gap:10px;
+    color:var(--ink-soft); text-align:center; padding:20px;
+    pointer-events:none;
+  }
+  .empty-hint b{ color:var(--ink); font-size:15px; }
+  .empty-hint span{ font-size:12.5px; }
+
+  input[type=file]{ display:none; }
+
+  @media print{
+    html, body{ height:auto !important; overflow:visible !important; background:#fff !important; }
+    .toolbar{ display:none !important; }
+    .app{ display:block !important; height:auto !important; }
+    .stage{
+      display:block !important; position:static !important;
+      padding:0 !important; margin:0 !important;
+      overflow:visible !important; height:auto !important;
+    }
+    .paper-wrap{ width:auto !important; height:auto !important; }
+    .paper{ box-shadow:none !important; }
+    .paper::before, .paper::after{ display:none !important; }
+    .tile img{ box-shadow:none !important; }
+    .tile .del, .tile .dup, .tile .handle, .anno-text-wrap .del{ display:none !important; }
+    .caption[contenteditable]{ outline:none !important; background:none !important; }
+    #pasteCatcher{ display:none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="toolbar">
+    <div class="brand"><span class="dot"></span>レイアウト</div>
+
+    <div class="group">
+      <label class="field">用紙
+        <select id="paperSize">
+          <option value="A3">A3</option>
+          <option value="A4" selected>A4</option>
+          <option value="A5">A5</option>
+          <option value="B4">B4</option>
+          <option value="B5">B5</option>
+          <option value="Letter">Letter</option>
+          <option value="Legal">Legal</option>
+        </select>
+      </label>
+      <label class="field">向き
+        <select id="orientation">
+          <option value="portrait" selected>縦</option>
+          <option value="landscape">横</option>
+        </select>
+      </label>
+      <div class="dims" id="dimsLabel"></div>
+    </div>
+
+    <div class="group">
+      <button class="primary" id="addBtn">＋ 画像を追加</button>
+      <input type="file" id="fileInput" accept="image/*" multiple>
+    </div>
+
+    <div class="group">
+      <button id="autoArrange">自動整列</button>
+      <label class="field">列<input type="number" id="cols" min="0" max="8" value="0" title="0=自動"></label>
+      <label class="field">余白mm<input type="number" id="gap" min="0" max="30" value="6"></label>
+    </div>
+
+    <div class="group">
+      <label class="field" style="flex-direction:row; align-items:center; gap:6px; text-transform:none; letter-spacing:0; font-weight:600; font-size:12.5px; color:var(--ink);">
+        <input type="checkbox" id="snapToggle" checked style="width:14px;height:14px; accent-color:var(--accent); cursor:pointer;">
+        スナップ
+      </label>
+      <label class="field" style="flex-direction:row; align-items:center; gap:6px; text-transform:none; letter-spacing:0; font-weight:600; font-size:12.5px; color:var(--ink);">
+        <input type="checkbox" id="captionToggle" style="width:14px;height:14px; accent-color:var(--accent); cursor:pointer;">
+        ファイル名・日付
+      </label>
+    </div>
+
+    <div class="group">
+      <button class="tool-btn on" id="toolSelect" title="選択・移動">↖ 選択</button>
+      <button class="tool-btn" id="toolArrow" title="矢印を描く">↗ 矢印</button>
+      <button class="tool-btn" id="toolCircle" title="丸で囲む">◯ 丸</button>
+      <button class="tool-btn" id="toolText" title="テキストを置く">T テキスト</button>
+    </div>
+
+    <div class="group">
+      <button class="ghost danger" id="clearAll">すべて削除</button>
+    </div>
+
+    <div class="group">
+      <button class="ghost" id="undoBtn" title="元に戻す (Ctrl+Z)">↶ 元に戻す</button>
+      <button class="ghost" id="redoBtn" title="やり直す (Ctrl+Shift+Z)">↷ やり直す</button>
+    </div>
+
+    <div class="group">
+      <button class="ghost" id="frontBtn" title="選択中の画像を最前面へ">最前面へ</button>
+      <button class="ghost" id="backBtn" title="選択中の画像を最背面へ">最背面へ</button>
+    </div>
+
+    <div class="spacer"></div>
+    <span class="count" id="countLabel">0 枚</span>
+    <div class="group">
+      <button id="saveLayout" title="画像ごとJSONファイルに保存">保存</button>
+      <button id="loadLayout" title="保存したJSONファイルを読み込む">読み込む</button>
+      <input type="file" id="loadInput" accept="application/json,.json">
+    </div>
+    <div class="group">
+      <button id="exportPng">PNG書き出し</button>
+      <button id="printBtn">印刷</button>
+    </div>
+  </div>
+
+  <div class="stage" id="stage">
+    <div class="paper-wrap">
+      <div class="paper" id="paper">
+        <div class="empty-hint" id="emptyHint">
+          <b>画像をここにドラッグ&ドロップ</b>
+          <span>「＋ 画像を追加」から選択、または Ctrl+V(Mac: ⌘+V)で貼り付け</span>
+          <span style="font-size:11px;">矢印キーで移動 / Delete で削除 / Ctrl+Z で元に戻す</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="pasteCatcher" contenteditable="true" tabindex="-1"
+       style="position:fixed; top:0; left:0; width:1px; height:1px; opacity:0; overflow:hidden;"></div>
+</div>
+
+<script>
+const MM_PER_PX_96DPI = 25.4/96; // css reference: 1px(96dpi) = 25.4/96 mm
+const PX_PER_MM = 96/25.4;       // ≈3.7795
+
+const PAPERS = {
+  A3:  {w:297, h:420},
+  A4:  {w:210, h:297},
+  A5:  {w:148, h:210},
+  B4:  {w:257, h:364},
+  B5:  {w:176, h:250},
+  Letter:{w:215.9, h:279.4},
+  Legal: {w:215.9, h:355.6},
+};
+
+const stage = document.getElementById('stage');
+const paperWrap = document.querySelector('.paper-wrap');
+const paperEl = document.getElementById('paper');
+const emptyHint = document.getElementById('emptyHint');
+const dimsLabel = document.getElementById('dimsLabel');
+const countLabel = document.getElementById('countLabel');
+const paperSizeSel = document.getElementById('paperSize');
+const orientationSel = document.getElementById('orientation');
+const fileInput = document.getElementById('fileInput');
+
+let state = {
+  paper: 'A4',
+  orientation: 'portrait',
+  tiles: [], // {id, src, img(HTMLImageElement), xMm,yMm,wMm,hMm, z, fileName, addedAt, caption}
+  annotations: [], // {id, type:'arrow'|'circle'|'text', ...}
+};
+let zTop = 1;
+let scaleFactor = 1;
+let activeTile = null;
+let activeAnnotation = null;
+let toolState = 'select'; // 'select' | 'arrow' | 'circle' | 'text'
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const annoSvg = document.createElementNS(SVG_NS, 'svg');
+annoSvg.setAttribute('class', 'anno-layer');
+annoSvg.innerHTML = `<defs>
+  <marker id="arrowhead" markerWidth="3.2" markerHeight="3.2" refX="2.6" refY="1.6" orient="auto">
+    <path d="M0,0 L3.2,1.6 L0,3.2 Z" fill="#d0231c"></path>
+  </marker>
+</defs>`;
+const annoTextLayer = document.createElement('div');
+annoTextLayer.className = 'anno-text-layer';
+paperEl.appendChild(annoSvg);
+paperEl.appendChild(annoTextLayer);
+
+// ---------- blob URL lifecycle tracking ----------
+// Multiple tiles can share the same blob src (duplicate). Only revoke
+// a blob URL once no tile references it anymore.
+function revokeIfUnused(src, excludeTiles){
+  if(!src || !src.startsWith('blob:')) return;
+  const stillUsed = state.tiles.some(t => t !== undefined && !(excludeTiles && excludeTiles.includes(t)) && t.src === src);
+  if(!stillUsed) URL.revokeObjectURL(src);
+}
+
+function paperDimsMm(){
+  const p = PAPERS[state.paper];
+  if(state.orientation === 'portrait') return {w:p.w, h:p.h};
+  return {w:p.h, h:p.w};
+}
+
+function layoutPaper(){
+  const {w, h} = paperDimsMm();
+  dimsLabel.textContent = `${w} × ${h} mm`;
+
+  // available space in stage
+  const avail = { w: stage.clientWidth - 80, h: stage.clientHeight - 80 };
+  const naturalPxW = w * PX_PER_MM;
+  const naturalPxH = h * PX_PER_MM;
+  scaleFactor = Math.min(avail.w/naturalPxW, avail.h/naturalPxH, 1.6);
+  if(scaleFactor <= 0) scaleFactor = 0.1;
+
+  paperEl.style.width = w + 'mm';
+  paperEl.style.height = h + 'mm';
+  paperEl.style.transform = `scale(${scaleFactor})`;
+
+  annoSvg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  annoSvg.setAttribute('preserveAspectRatio', 'none');
+
+  paperWrap.style.width = (naturalPxW * scaleFactor) + 'px';
+  paperWrap.style.height = (naturalPxH * scaleFactor) + 'px';
+
+  renderTiles();
+  renderAnnotations();
+}
+
+function renderTiles(){
+  // remove old tile DOM (keep emptyHint)
+  [...paperEl.querySelectorAll('.tile, .caption')].forEach(el => el.remove());
+  emptyHint.style.display = state.tiles.length ? 'none' : 'flex';
+  const showCaptions = document.getElementById('captionToggle').checked;
+
+  state.tiles.forEach(t => {
+    const el = document.createElement('div');
+    el.className = 'tile' + (t === activeTile ? ' active' : '');
+    el.style.left = t.xMm + 'mm';
+    el.style.top = t.yMm + 'mm';
+    el.style.width = t.wMm + 'mm';
+    el.style.height = t.hMm + 'mm';
+    el.style.zIndex = t.z;
+    el.dataset.id = t.id;
+
+    const img = document.createElement('img');
+    img.src = t.src;
+    img.draggable = false;
+    el.appendChild(img);
+
+    const del = document.createElement('div');
+    del.className = 'del';
+    del.textContent = '×';
+    del.title = '削除 (Delete)';
+    del.addEventListener('pointerdown', e => e.stopPropagation());
+    del.addEventListener('click', e => {
+      e.stopPropagation();
+      pushHistory();
+      state.tiles = state.tiles.filter(x => x !== t);
+      revokeIfUnused(t.src);
+      if(activeTile === t) activeTile = null;
+      renderTiles();
+      updateCount();
+    });
+    el.appendChild(del);
+
+    const dup = document.createElement('div');
+    dup.className = 'dup';
+    dup.textContent = '⧉';
+    dup.title = '複製 (Ctrl+D)';
+    dup.addEventListener('pointerdown', e => e.stopPropagation());
+    dup.addEventListener('click', e => {
+      e.stopPropagation();
+      duplicateTile(t);
+    });
+    el.appendChild(dup);
+
+    const handle = document.createElement('div');
+    handle.className = 'handle';
+    el.appendChild(handle);
+
+    el.addEventListener('pointerdown', e => startMove(e, t, el));
+    handle.addEventListener('pointerdown', e => startResize(e, t, el));
+
+    paperEl.appendChild(el);
+
+    if(showCaptions){
+      const cap = document.createElement('div');
+      cap.className = 'caption';
+      cap.style.left = t.xMm + 'mm';
+      cap.style.top = (t.yMm + t.hMm + 0.8) + 'mm';
+      cap.style.width = t.wMm + 'mm';
+      cap.style.zIndex = t.z + 1;
+      cap.textContent = captionText(t);
+      cap.title = 'ダブルクリックで編集';
+      cap.addEventListener('pointerdown', e => e.stopPropagation());
+      cap.addEventListener('dblclick', e => {
+        e.stopPropagation();
+        cap.dataset.editing = '1';
+        cap.contentEditable = 'true';
+        cap.textContent = t.caption;
+        cap.focus();
+        selectAllContent(cap);
+      });
+      cap.addEventListener('blur', () => {
+        if(cap.dataset.editing !== '1') return;
+        delete cap.dataset.editing;
+        cap.contentEditable = 'false';
+        const newCaption = cap.textContent.trim() || t.fileName;
+        if(newCaption !== t.caption){
+          pushHistory();
+          t.caption = newCaption;
+        }
+        cap.textContent = captionText(t);
+      });
+      cap.addEventListener('keydown', e => {
+        if(e.key === 'Enter'){ e.preventDefault(); cap.blur(); }
+        e.stopPropagation();
+      });
+      paperEl.appendChild(cap);
+    }
+  });
+}
+
+function selectAllContent(el){
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+function formatDate(d){
+  const p = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}/${p(d.getMonth()+1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function captionText(t){
+  const dateStr = formatDate(new Date(t.addedAt));
+  return `${t.caption}　・　${dateStr}`;
+}
+
+function duplicateTile(t){
+  pushHistory();
+  const clone = {
+    id: 't' + Math.random().toString(36).slice(2,9),
+    src: t.src,
+    xMm: t.xMm + 8,
+    yMm: t.yMm + 8,
+    wMm: t.wMm,
+    hMm: t.hMm,
+    z: ++zTop,
+    fileName: t.fileName,
+    addedAt: t.addedAt,
+    caption: t.caption,
+  };
+  state.tiles.push(clone);
+  activeTile = clone;
+  renderTiles();
+  updateCount();
+}
+
+function updateCount(){
+  countLabel.textContent = `${state.tiles.length} 枚`;
+}
+
+function bringToFront(t){
+  zTop += 1;
+  t.z = zTop;
+  activeTile = t;
+}
+
+// ---------- undo / redo ----------
+let historyStack = [];
+let redoStack = [];
+const MAX_HISTORY = 50;
+
+function snapshotTiles(){
+  return {
+    tiles: state.tiles.map(t => ({
+      id:t.id, src:t.src, xMm:t.xMm, yMm:t.yMm, wMm:t.wMm, hMm:t.hMm, z:t.z,
+      fileName:t.fileName, addedAt:t.addedAt, caption:t.caption,
+    })),
+    annotations: state.annotations.map(a => ({...a})),
+  };
+}
+
+function pushHistory(){
+  historyStack.push(JSON.stringify(snapshotTiles()));
+  if(historyStack.length > MAX_HISTORY) historyStack.shift();
+  redoStack = [];
+}
+
+function restoreSnapshot(json){
+  const prevActiveId = activeTile ? activeTile.id : null;
+  const prevAnnoId = activeAnnotation ? activeAnnotation.id : null;
+  const data = JSON.parse(json);
+  state.tiles = (data.tiles || []).map(o => ({...o}));
+  state.annotations = (data.annotations || []).map(o => ({...o}));
+  activeTile = state.tiles.find(t => t.id === prevActiveId) || null;
+  activeAnnotation = state.annotations.find(a => a.id === prevAnnoId) || null;
+  renderTiles();
+  renderAnnotations();
+  updateCount();
+}
+
+function undo(){
+  if(!historyStack.length) return;
+  redoStack.push(JSON.stringify(snapshotTiles()));
+  restoreSnapshot(historyStack.pop());
+}
+
+function redo(){
+  if(!redoStack.length) return;
+  historyStack.push(JSON.stringify(snapshotTiles()));
+  restoreSnapshot(redoStack.pop());
+}
+
+document.getElementById('undoBtn').addEventListener('click', undo);
+document.getElementById('redoBtn').addEventListener('click', redo);
+
+document.getElementById('frontBtn').addEventListener('click', () => {
+  if(!activeTile) return;
+  pushHistory();
+  activeTile.z = ++zTop;
+  renderTiles();
+});
+document.getElementById('backBtn').addEventListener('click', () => {
+  if(!activeTile) return;
+  pushHistory();
+  const minZ = Math.min(...state.tiles.map(t => t.z));
+  activeTile.z = minZ - 1;
+  renderTiles();
+});
+
+// ---------- keyboard shortcuts ----------
+window.addEventListener('keydown', e => {
+  const activeEl = document.activeElement;
+  const tag = activeEl && activeEl.tagName;
+  const isEditing = activeEl && activeEl.isContentEditable && activeEl.id !== 'pasteCatcher';
+  const inFormField = ['INPUT','SELECT','TEXTAREA'].includes(tag) || isEditing;
+
+  const isUndo = (e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z';
+  const isRedo = (e.ctrlKey || e.metaKey) && (e.shiftKey && e.key.toLowerCase() === 'z' || e.key.toLowerCase() === 'y');
+  if(isUndo && !isEditing){ e.preventDefault(); undo(); return; }
+  if(isRedo && !isEditing){ e.preventDefault(); redo(); return; }
+
+  if(inFormField) return;
+
+  if((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd'){
+    if(activeTile){ e.preventDefault(); duplicateTile(activeTile); }
+    return;
+  }
+  if(e.key === 'Escape'){
+    if(toolState !== 'select'){
+      // cancel drawing mode without leaving a stray shape behind
+      setTool('select');
+      return;
+    }
+    activeTile = null; activeAnnotation = null;
+    renderTiles();
+    renderAnnotations();
+    return;
+  }
+  if((e.key === 'Delete' || e.key === 'Backspace')){
+    if(activeTile){
+      e.preventDefault();
+      pushHistory();
+      state.tiles = state.tiles.filter(x => x !== activeTile);
+      revokeIfUnused(activeTile.src);
+      activeTile = null;
+      renderTiles();
+      updateCount();
+      return;
+    }
+    if(activeAnnotation){
+      e.preventDefault();
+      pushHistory();
+      state.annotations = state.annotations.filter(x => x !== activeAnnotation);
+      activeAnnotation = null;
+      renderAnnotations();
+      return;
+    }
+  }
+  const nudgeKeys = ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'];
+  if(nudgeKeys.includes(e.key) && (activeTile || activeAnnotation)){
+    e.preventDefault();
+    pushHistory();
+    const step = e.shiftKey ? 5 : 1;
+    const dx = e.key==='ArrowLeft' ? -step : e.key==='ArrowRight' ? step : 0;
+    const dy = e.key==='ArrowUp' ? -step : e.key==='ArrowDown' ? step : 0;
+    if(activeTile){
+      activeTile.xMm += dx; activeTile.yMm += dy;
+      renderTiles();
+    } else if(activeAnnotation){
+      const a = activeAnnotation;
+      if(a.type === 'arrow'){ a.x1+=dx; a.y1+=dy; a.x2+=dx; a.y2+=dy; }
+      else { a.x += dx; a.y += dy; }
+      renderAnnotations();
+    }
+  }
+});
+
+function pxToMm(px){ return px / (PX_PER_MM * scaleFactor); }
+
+const SNAP_THRESHOLD_MM = 2.5;
+
+function getSnapTargets(excludeTile){
+  const {w:paperW, h:paperH} = paperDimsMm();
+  const xs = new Set([0, paperW/2, paperW]);
+  const ys = new Set([0, paperH/2, paperH]);
+  state.tiles.forEach(o => {
+    if(o === excludeTile) return;
+    xs.add(o.xMm); xs.add(o.xMm + o.wMm); xs.add(o.xMm + o.wMm/2);
+    ys.add(o.yMm); ys.add(o.yMm + o.hMm); ys.add(o.yMm + o.hMm/2);
+  });
+  return {xs:[...xs], ys:[...ys]};
+}
+
+function snapPosition(t, rawX, rawY){
+  const snapEnabled = document.getElementById('snapToggle').checked;
+  if(!snapEnabled) return {x:rawX, y:rawY, guideX:null, guideY:null};
+
+  const {xs, ys} = getSnapTargets(t);
+  let x = rawX, y = rawY, guideX = null, guideY = null;
+
+  const edgesX = [rawX, rawX + t.wMm, rawX + t.wMm/2];
+  outerX:
+  for(const edgeVal of edgesX){
+    for(const cand of xs){
+      if(Math.abs(edgeVal - cand) < SNAP_THRESHOLD_MM){
+        x = rawX + (cand - edgeVal);
+        guideX = cand;
+        break outerX;
+      }
+    }
+  }
+  const edgesY = [rawY, rawY + t.hMm, rawY + t.hMm/2];
+  outerY:
+  for(const edgeVal of edgesY){
+    for(const cand of ys){
+      if(Math.abs(edgeVal - cand) < SNAP_THRESHOLD_MM){
+        y = rawY + (cand - edgeVal);
+        guideY = cand;
+        break outerY;
+      }
+    }
+  }
+  return {x, y, guideX, guideY};
+}
+
+function showGuides(guideX, guideY){
+  clearGuides();
+  if(guideX !== null){
+    const g = document.createElement('div');
+    g.className = 'guide-line v';
+    g.style.left = guideX + 'mm';
+    paperEl.appendChild(g);
+  }
+  if(guideY !== null){
+    const g = document.createElement('div');
+    g.className = 'guide-line h';
+    g.style.top = guideY + 'mm';
+    paperEl.appendChild(g);
+  }
+}
+
+function clearGuides(){
+  paperEl.querySelectorAll('.guide-line').forEach(el => el.remove());
+}
+
+function startMove(e, t, el){
+  if(e.target.closest('.del') || e.target.closest('.handle') || e.target.closest('.dup')) return;
+  e.preventDefault();
+  e.stopPropagation();
+  pushHistory();
+  bringToFront(t);
+  renderTiles();
+  const freshEl = paperEl.querySelector(`.tile[data-id="${t.id}"]`);
+  const startX = e.clientX, startY = e.clientY;
+  const origX = t.xMm, origY = t.yMm;
+  const {w:paperW, h:paperH} = paperDimsMm();
+  let dragging = true;
+  try{ (freshEl || el).setPointerCapture(e.pointerId); }catch(err){}
+
+  function onMove(ev){
+    if(!dragging) return;
+    ev.preventDefault();
+    const dxMm = pxToMm(ev.clientX - startX);
+    const dyMm = pxToMm(ev.clientY - startY);
+    const rawX = origX + dxMm;
+    const rawY = origY + dyMm;
+    const snapped = snapPosition(t, rawX, rawY);
+    t.xMm = clamp(snapped.x, -t.wMm*0.4, paperW - t.wMm*0.6);
+    t.yMm = clamp(snapped.y, -t.hMm*0.4, paperH - t.hMm*0.6);
+    renderTiles();
+    showGuides(snapped.guideX, snapped.guideY);
+  }
+  function onUp(ev){
+    dragging = false;
+    clearGuides();
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onUp);
+  }
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onUp);
+}
+
+function startResize(e, t, el){
+  e.preventDefault();
+  e.stopPropagation();
+  pushHistory();
+  bringToFront(t);
+  const startX = e.clientX, startY = e.clientY;
+  const origW = t.wMm, origH = t.hMm;
+  const aspect = origW / origH;
+  try{ el.setPointerCapture(e.pointerId); }catch(err){}
+
+  function onMove(ev){
+    ev.preventDefault();
+    const dxMm = pxToMm(ev.clientX - startX);
+    let newW = Math.max(15, origW + dxMm);
+    let newH = newW / aspect;
+    t.wMm = newW;
+    t.hMm = newH;
+    renderTiles();
+  }
+  function onUp(){
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onUp);
+  }
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onUp);
+}
+
+function clamp(v, min, max){ return Math.max(min, Math.min(max, v)); }
+
+// ---------- adding images ----------
+function addFiles(fileList){
+  const files = [...fileList].filter(f => f.type.startsWith('image/'));
+  if(!files.length) return;
+  pushHistory();
+  let cascade = state.tiles.length;
+  files.forEach(file => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    const rawName = file.name || 'スクリーンショット';
+    const niceName = rawName.replace(/\.[a-zA-Z0-9]+$/, '') || rawName;
+    const addedAt = Date.now();
+    img.onload = () => {
+      const {w:paperW, h:paperH} = paperDimsMm();
+      const targetW = Math.min(paperW * 0.45, 90);
+      const targetH = targetW * (img.naturalHeight / img.naturalWidth);
+      const offset = (cascade % 8) * 8;
+      const t = {
+        id: 't' + Math.random().toString(36).slice(2,9),
+        src: url,
+        xMm: 10 + offset,
+        yMm: 10 + offset,
+        wMm: targetW,
+        hMm: targetH,
+        z: ++zTop,
+        fileName: niceName,
+        addedAt: addedAt,
+        caption: niceName,
+      };
+      state.tiles.push(t);
+      activeTile = t;
+      cascade++;
+      renderTiles();
+      updateCount();
+    };
+    img.src = url;
+  });
+}
+
+document.getElementById('addBtn').addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', e => { addFiles(e.target.files); fileInput.value=''; });
+
+['dragenter','dragover'].forEach(ev => stage.addEventListener(ev, e => {
+  e.preventDefault(); stage.classList.add('dragover');
+}));
+['dragleave','drop'].forEach(ev => stage.addEventListener(ev, e => {
+  if(ev === 'drop'){ e.preventDefault(); addFiles(e.dataTransfer.files); }
+  stage.classList.remove('dragover');
+}));
+
+// ---------- paste from clipboard ----------
+// Firefox only fires 'paste' on the currently focused, editable element,
+// so we keep an invisible contenteditable focused at all times to catch it.
+const pasteCatcher = document.getElementById('pasteCatcher');
+
+// If the user is editing a caption or text-annotation (contenteditable) and
+// clicks elsewhere, force it to commit (blur) BEFORE any other pointerdown
+// handler (deselect, drag-start, etc.) gets a chance to rebuild the DOM.
+// Without this, a click-driven focus change can race with our blur handler
+// and the rebuild can happen using the not-yet-saved text.
+window.addEventListener('pointerdown', e => {
+  const ae = document.activeElement;
+  if(ae && ae.isContentEditable && ae !== pasteCatcher && ae !== e.target && !ae.contains(e.target)){
+    ae.blur();
+  }
+}, true);
+
+function focusPasteCatcher(){
+  // don't steal focus while the user is typing in a real form field,
+  // or editing a caption / text annotation (also contenteditable)
+  const active = document.activeElement;
+  if(active && (
+    ['INPUT','SELECT','TEXTAREA'].includes(active.tagName) ||
+    (active.isContentEditable && active !== pasteCatcher)
+  )) return;
+  pasteCatcher.focus({preventScroll:true});
+}
+
+function handlePasteEvent(e){
+  const items = e.clipboardData && e.clipboardData.items;
+  if(!items) return;
+  const imageFiles = [];
+  for(const item of items){
+    if(item.type && item.type.startsWith('image/')){
+      const raw = item.getAsFile();
+      if(raw){
+        const dateStr = formatDate(new Date()).replace(/[/: ]/g, '-');
+        const named = new File([raw], `スクリーンショット-${dateStr}`, {type: raw.type});
+        imageFiles.push(named);
+      }
+    }
+  }
+  if(imageFiles.length){
+    e.preventDefault();
+    addFiles(imageFiles);
+    flashPasteHint();
+  }
+  // clear any stray content Firefox may have inserted into the catcher
+  pasteCatcher.textContent = '';
+}
+
+pasteCatcher.addEventListener('paste', handlePasteEvent);
+
+// keep the catcher focused so Ctrl+V works anywhere on the page
+window.addEventListener('load', focusPasteCatcher);
+document.addEventListener('click', e => {
+  if(['INPUT','SELECT','TEXTAREA','BUTTON'].includes(e.target.tagName)) return;
+  setTimeout(focusPasteCatcher, 0);
+});
+document.addEventListener('pointerup', () => setTimeout(focusPasteCatcher, 0));
+focusPasteCatcher();
+
+function flashPasteHint(){
+  const note = document.createElement('div');
+  note.textContent = '貼り付けました';
+  note.style.cssText = `
+    position:fixed; top:70px; left:50%; transform:translateX(-50%);
+    background:var(--ink); color:#fff; padding:7px 14px; border-radius:20px;
+    font-size:12.5px; font-weight:600; z-index:9999; opacity:0;
+    transition:opacity .15s; pointer-events:none;
+  `;
+  document.body.appendChild(note);
+  requestAnimationFrame(() => note.style.opacity = '1');
+  setTimeout(() => {
+    note.style.opacity = '0';
+    setTimeout(() => note.remove(), 200);
+  }, 1000);
+}
+
+// ---------- annotation tools ----------
+const toolButtons = {
+  select: document.getElementById('toolSelect'),
+  arrow: document.getElementById('toolArrow'),
+  circle: document.getElementById('toolCircle'),
+  text: document.getElementById('toolText'),
+};
+
+function setTool(name){
+  toolState = name;
+  Object.entries(toolButtons).forEach(([k, btn]) => btn.classList.toggle('on', k === name));
+  const drawing = name !== 'select';
+  annoSvg.style.pointerEvents = drawing ? 'auto' : 'none';
+  annoSvg.style.cursor = drawing ? 'crosshair' : 'default';
+  annoTextLayer.style.pointerEvents = (name === 'text') ? 'auto' : 'none';
+  if(drawing){ activeTile = null; activeAnnotation = null; renderTiles(); }
+  // Always re-render annotations so each shape's pointer-events
+  // (which depend on toolState) stay in sync with the current tool,
+  // whether we just entered OR left a drawing mode.
+  renderAnnotations();
+}
+Object.entries(toolButtons).forEach(([k, btn]) => btn.addEventListener('click', () => setTool(k)));
+
+function clientToMm(clientX, clientY){
+  const rect = paperEl.getBoundingClientRect();
+  const {w, h} = paperDimsMm();
+  return {
+    xMm: clamp((clientX - rect.left) * (w / rect.width), 0, w),
+    yMm: clamp((clientY - rect.top) * (h / rect.height), 0, h),
+  };
+}
+
+function newAnnoId(){ return 'a' + Math.random().toString(36).slice(2,9); }
+
+function highlightActiveAnnotation(){
+  const activeId = activeAnnotation ? activeAnnotation.id : null;
+  annoSvg.querySelectorAll('[data-anno-id]').forEach(el => {
+    el.classList.toggle('active', el.getAttribute('data-anno-id') === activeId);
+  });
+  annoTextLayer.querySelectorAll('[data-anno-id]').forEach(el => {
+    el.classList.toggle('active', el.dataset.annoId === activeId);
+  });
+  if(activeAnnotation){ activeTile = null; renderTiles(); }
+}
+
+function renderAnnotations(){
+  [...annoSvg.querySelectorAll(':scope > :not(defs)')].forEach(el => el.remove());
+  [...annoTextLayer.children].forEach(el => el.remove());
+
+  state.annotations.forEach(a => {
+    if(a.type === 'arrow'){
+      const line = document.createElementNS(SVG_NS, 'line');
+      line.setAttribute('x1', a.x1); line.setAttribute('y1', a.y1);
+      line.setAttribute('x2', a.x2); line.setAttribute('y2', a.y2);
+      line.setAttribute('stroke', '#d0231c');
+      line.setAttribute('stroke-width', 1.1);
+      line.setAttribute('stroke-linecap', 'round');
+      line.setAttribute('marker-end', 'url(#arrowhead)');
+      line.setAttribute('class', 'anno-shape' + (a === activeAnnotation ? ' active' : ''));
+      line.setAttribute('data-anno-id', a.id);
+      line.style.pointerEvents = (toolState === 'select') ? 'auto' : 'none';
+      line.addEventListener('pointerdown', e => startAnnoDrag(e, a));
+      annoSvg.appendChild(line);
+    } else if(a.type === 'circle'){
+      const ell = document.createElementNS(SVG_NS, 'ellipse');
+      ell.setAttribute('cx', a.x + a.w/2);
+      ell.setAttribute('cy', a.y + a.h/2);
+      ell.setAttribute('rx', Math.abs(a.w/2));
+      ell.setAttribute('ry', Math.abs(a.h/2));
+      ell.setAttribute('stroke', '#d0231c');
+      ell.setAttribute('stroke-width', 1.1);
+      ell.setAttribute('fill', 'rgba(224,70,58,0.08)');
+      ell.setAttribute('class', 'anno-shape' + (a === activeAnnotation ? ' active' : ''));
+      ell.setAttribute('data-anno-id', a.id);
+      ell.style.pointerEvents = (toolState === 'select') ? 'auto' : 'none';
+      ell.addEventListener('pointerdown', e => startAnnoDrag(e, a));
+      annoSvg.appendChild(ell);
+    } else if(a.type === 'text'){
+      const wrap = document.createElement('div');
+      wrap.className = 'anno-text-wrap' + (a === activeAnnotation ? ' active' : '');
+      wrap.dataset.annoId = a.id;
+      wrap.style.left = a.x + 'mm';
+      wrap.style.top = a.y + 'mm';
+
+      const div = document.createElement('div');
+      div.className = 'anno-text';
+      div.style.fontSize = '4.2mm';
+      div.textContent = a.text;
+      div.addEventListener('dblclick', e => {
+        e.stopPropagation();
+        div.contentEditable = 'true';
+        div.focus();
+        selectAllContent(div);
+      });
+      div.addEventListener('blur', () => {
+        div.contentEditable = 'false';
+        a.text = div.textContent.trim() || 'テキスト';
+        renderAnnotations();
+      });
+      div.addEventListener('keydown', e => {
+        e.stopPropagation();
+        if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); div.blur(); }
+      });
+      div.addEventListener('pointerdown', e => {
+        if(div.isContentEditable) { e.stopPropagation(); return; }
+        e.preventDefault();
+        e.stopPropagation();
+
+        const startX = e.clientX, startY = e.clientY;
+        const origX = a.x, origY = a.y;
+        let moved = false, historyPushed = false;
+
+        function onMove(ev){
+          const rect = paperEl.getBoundingClientRect();
+          const {w, h} = paperDimsMm();
+          const dxMm = (ev.clientX - startX) * (w / rect.width);
+          const dyMm = (ev.clientY - startY) * (h / rect.height);
+          if(!moved && Math.hypot(ev.clientX-startX, ev.clientY-startY) > 3){
+            moved = true;
+            if(!historyPushed){ pushHistory(); historyPushed = true; }
+          }
+          if(moved){
+            a.x = origX + dxMm;
+            a.y = origY + dyMm;
+            // move the existing element directly — no DOM rebuild, so a
+            // second click right after still lands on the same node
+            wrap.style.left = a.x + 'mm';
+            wrap.style.top = a.y + 'mm';
+          }
+        }
+        function onUp(){
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', onUp);
+          if(!moved){
+            // plain click = just select, without recreating the DOM node
+            // (recreating here would break a following dblclick-to-edit)
+            activeAnnotation = a;
+            highlightActiveAnnotation();
+          } else {
+            renderAnnotations();
+          }
+        }
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+      });
+      wrap.appendChild(div);
+
+      const del = document.createElement('div');
+      del.className = 'del';
+      del.textContent = '×';
+      del.addEventListener('pointerdown', e => e.stopPropagation());
+      del.addEventListener('click', e => {
+        e.stopPropagation();
+        pushHistory();
+        state.annotations = state.annotations.filter(x => x !== a);
+        if(activeAnnotation === a) activeAnnotation = null;
+        renderAnnotations();
+      });
+      wrap.appendChild(del);
+
+      annoTextLayer.appendChild(wrap);
+    }
+  });
+}
+
+function startAnnoDrag(e, a){
+  if(toolState !== 'select') return;
+  e.preventDefault();
+  e.stopPropagation();
+  pushHistory();
+  activeTile = null;
+  activeAnnotation = a;
+  renderTiles();
+  renderAnnotations();
+  const startX = e.clientX, startY = e.clientY;
+  const orig = {...a};
+  let dragging = true;
+  try{ e.target.setPointerCapture(e.pointerId); }catch(err){}
+
+  function onMove(ev){
+    if(!dragging) return;
+    const rect = paperEl.getBoundingClientRect();
+    const {w, h} = paperDimsMm();
+    const dxMm = (ev.clientX - startX) * (w / rect.width);
+    const dyMm = (ev.clientY - startY) * (h / rect.height);
+    if(a.type === 'arrow'){
+      a.x1 = orig.x1 + dxMm; a.y1 = orig.y1 + dyMm;
+      a.x2 = orig.x2 + dxMm; a.y2 = orig.y2 + dyMm;
+    } else if(a.type === 'circle'){
+      a.x = orig.x + dxMm; a.y = orig.y + dyMm;
+    } else if(a.type === 'text'){
+      a.x = orig.x + dxMm; a.y = orig.y + dyMm;
+    }
+    renderAnnotations();
+  }
+  function onUp(){
+    dragging = false;
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onUp);
+  }
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onUp);
+}
+
+// text placement — handled on annoTextLayer itself, since it sits above
+// annoSvg and would otherwise swallow the click before it reaches the svg
+annoTextLayer.addEventListener('pointerdown', e => {
+  if(toolState !== 'text') return;
+  if(e.target !== annoTextLayer) return;
+  e.preventDefault();
+
+  pushHistory();
+  const {xMm, yMm} = clientToMm(e.clientX, e.clientY);
+  const a = { id:newAnnoId(), type:'text', x:xMm, y:yMm, text:'テキスト' };
+  state.annotations.push(a);
+  activeAnnotation = a;
+  setTool('select');
+  requestAnimationFrame(() => {
+    const wrap = [...annoTextLayer.children].pop();
+    const target = wrap && wrap.querySelector('.anno-text');
+    if(target){
+      target.contentEditable = 'true';
+      target.focus();
+      selectAllContent(target);
+    }
+  });
+});
+
+// drawing new shapes (arrow / circle) on the paper
+annoSvg.addEventListener('pointerdown', e => {
+  if(toolState === 'select' || toolState === 'text') return;
+  if(e.target !== annoSvg) return;
+  e.preventDefault();
+
+  pushHistory();
+  const start = clientToMm(e.clientX, e.clientY);
+  const a = (toolState === 'arrow')
+    ? { id:newAnnoId(), type:'arrow', x1:start.xMm, y1:start.yMm, x2:start.xMm, y2:start.yMm }
+    : { id:newAnnoId(), type:'circle', x:start.xMm, y:start.yMm, w:0, h:0 };
+  state.annotations.push(a);
+  let dragging = true;
+
+  function onMove(ev){
+    if(!dragging) return;
+    const cur = clientToMm(ev.clientX, ev.clientY);
+    if(a.type === 'arrow'){
+      a.x2 = cur.xMm; a.y2 = cur.yMm;
+    } else {
+      a.x = Math.min(start.xMm, cur.xMm);
+      a.y = Math.min(start.yMm, cur.yMm);
+      a.w = Math.abs(cur.xMm - start.xMm);
+      a.h = Math.abs(cur.yMm - start.yMm);
+    }
+    renderAnnotations();
+  }
+  function onUp(){
+    dragging = false;
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    // discard degenerate shapes (simple click, no drag)
+    const tooSmall = (a.type === 'arrow')
+      ? Math.hypot(a.x2-a.x1, a.y2-a.y1) < 2
+      : (a.w < 2 && a.h < 2);
+    if(tooSmall){
+      state.annotations = state.annotations.filter(x => x !== a);
+      historyStack.pop();
+    } else {
+      activeAnnotation = a;
+    }
+    setTool('select');
+  }
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+});
+
+// deselect on empty paper click
+paperEl.addEventListener('pointerdown', e => {
+  if(toolState !== 'select') return;
+  if(e.target === paperEl){ activeTile = null; activeAnnotation = null; renderTiles(); renderAnnotations(); }
+});
+
+// ---------- auto arrange ----------
+document.getElementById('autoArrange').addEventListener('click', () => {
+  const n = state.tiles.length;
+  if(n === 0) return;
+  pushHistory();
+  const gap = parseFloat(document.getElementById('gap').value) || 0;
+  let cols = parseInt(document.getElementById('cols').value) || 0;
+  const {w:paperW, h:paperH} = paperDimsMm();
+
+  if(!cols){
+    const ratio = paperW / paperH;
+    cols = Math.max(1, Math.round(Math.sqrt(n * ratio)));
+  }
+  const rows = Math.ceil(n / cols);
+
+  const cellW = (paperW - gap*(cols+1)) / cols;
+  const cellH = (paperH - gap*(rows+1)) / rows;
+
+  state.tiles.forEach((t, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const cellX = gap + col * (cellW + gap);
+    const cellY = gap + row * (cellH + gap);
+
+    // use existing aspect from current w/h as proxy for natural aspect
+    const aspect = t.wMm / t.hMm;
+    let fitW = cellW, fitH = cellW / aspect;
+    if(fitH > cellH){ fitH = cellH; fitW = cellH * aspect; }
+
+    t.wMm = fitW;
+    t.hMm = fitH;
+    t.xMm = cellX + (cellW - fitW)/2;
+    t.yMm = cellY + (cellH - fitH)/2;
+  });
+  renderTiles();
+});
+
+document.getElementById('clearAll').addEventListener('click', () => {
+  const hasContent = state.tiles.length || state.annotations.length;
+  if(hasContent && !confirm('すべての画像と注釈を削除しますか？')) return;
+  if(hasContent) pushHistory();
+  // release every blob URL still referenced by a tile before wiping state
+  const seen = new Set();
+  state.tiles.forEach(t => {
+    if(t.src && t.src.startsWith('blob:') && !seen.has(t.src)){
+      seen.add(t.src);
+      URL.revokeObjectURL(t.src);
+    }
+  });
+  state.tiles = [];
+  state.annotations = [];
+  activeTile = null;
+  activeAnnotation = null;
+  renderTiles();
+  renderAnnotations();
+  updateCount();
+});
+
+paperSizeSel.addEventListener('change', () => { state.paper = paperSizeSel.value; layoutPaper(); });
+document.getElementById('captionToggle').addEventListener('change', renderTiles);
+orientationSel.addEventListener('change', () => { state.orientation = orientationSel.value; layoutPaper(); });
+
+window.addEventListener('resize', layoutPaper);
+
+// ---------- save / load layout (JSON, images embedded as base64) ----------
+function blobUrlToDataUrl(url){
+  return fetch(url)
+    .then(res => res.blob())
+    .then(blob => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    }));
+}
+
+document.getElementById('saveLayout').addEventListener('click', async () => {
+  if(!state.tiles.length){ alert('保存する画像がありません'); return; }
+  const btn = document.getElementById('saveLayout');
+  const original = btn.textContent;
+  btn.textContent = '保存中…';
+  btn.disabled = true;
+  try{
+    const tilesData = await Promise.all(state.tiles.map(async t => ({
+      xMm:t.xMm, yMm:t.yMm, wMm:t.wMm, hMm:t.hMm, z:t.z,
+      fileName:t.fileName, addedAt:t.addedAt, caption:t.caption,
+      src: await blobUrlToDataUrl(t.src),
+    })));
+    const payload = {
+      version:2,
+      paper: state.paper,
+      orientation: state.orientation,
+      tiles: tilesData,
+      annotations: state.annotations,
+    };
+    const blob = new Blob([JSON.stringify(payload)], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `layout-${state.paper}-${state.orientation}.json`;
+    a.click();
+  } finally {
+    btn.textContent = original;
+    btn.disabled = false;
+  }
+});
+
+const loadInput = document.getElementById('loadInput');
+document.getElementById('loadLayout').addEventListener('click', () => loadInput.click());
+loadInput.addEventListener('change', e => {
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try{
+      const payload = JSON.parse(reader.result);
+      pushHistory();
+      // release blob URLs from the layout being replaced
+      const seen = new Set();
+      state.tiles.forEach(t => {
+        if(t.src && t.src.startsWith('blob:') && !seen.has(t.src)){
+          seen.add(t.src);
+          URL.revokeObjectURL(t.src);
+        }
+      });
+      state.paper = payload.paper || 'A4';
+      state.orientation = payload.orientation || 'portrait';
+      paperSizeSel.value = state.paper;
+      orientationSel.value = state.orientation;
+      state.tiles = (payload.tiles || []).map(o => ({
+        id: 't' + Math.random().toString(36).slice(2,9),
+        src: o.src, xMm:o.xMm, yMm:o.yMm, wMm:o.wMm, hMm:o.hMm,
+        z: o.z || ++zTop,
+        fileName: o.fileName || 'スクリーンショット',
+        addedAt: o.addedAt || Date.now(),
+        caption: o.caption || o.fileName || 'スクリーンショット',
+      }));
+      state.annotations = (payload.annotations || []).map(a => ({...a, id: a.id || newAnnoId()}));
+      zTop = Math.max(zTop, ...state.tiles.map(t => t.z), 1);
+      activeTile = null;
+      activeAnnotation = null;
+      layoutPaper();
+      updateCount();
+    }catch(err){
+      alert('読み込みに失敗しました。ファイル形式を確認してください。');
+    }
+  };
+  reader.readAsText(file);
+  loadInput.value = '';
+});
+
+// ---------- export PNG ----------
+function drawEllipsizedText(ctx, text, x, y, maxWidth){
+  if(ctx.measureText(text).width <= maxWidth){
+    ctx.fillText(text, x, y);
+    return;
+  }
+  const ellipsis = '…';
+  let lo = 0, hi = text.length;
+  while(lo < hi){
+    const mid = Math.ceil((lo + hi) / 2);
+    const candidate = text.slice(0, mid) + ellipsis;
+    if(ctx.measureText(candidate).width <= maxWidth) lo = mid;
+    else hi = mid - 1;
+  }
+  ctx.fillText(text.slice(0, lo) + ellipsis, x, y);
+}
+
+document.getElementById('exportPng').addEventListener('click', async () => {
+  const {w:paperW, h:paperH} = paperDimsMm();
+  const dpi = 200;
+  const pxPerMm = dpi / 25.4;
+  const showCaptions = document.getElementById('captionToggle').checked;
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(paperW * pxPerMm);
+  canvas.height = Math.round(paperH * pxPerMm);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0,0,canvas.width, canvas.height);
+
+  const ordered = [...state.tiles].sort((a,b) => a.z - b.z);
+  for(const t of ordered){
+    await new Promise(res => {
+      const img = new Image();
+      img.onload = () => {
+        ctx.drawImage(
+          img,
+          t.xMm * pxPerMm, t.yMm * pxPerMm,
+          t.wMm * pxPerMm, t.hMm * pxPerMm
+        );
+        if(showCaptions){
+          ctx.fillStyle = '#6c7086';
+          ctx.font = `${3.1 * pxPerMm}px -apple-system, sans-serif`;
+          ctx.textBaseline = 'top';
+          drawEllipsizedText(
+            ctx,
+            captionText(t),
+            t.xMm * pxPerMm,
+            (t.yMm + t.hMm + 0.8) * pxPerMm,
+            t.wMm * pxPerMm
+          );
+        }
+        res();
+      };
+      img.onerror = res;
+      img.src = t.src;
+    });
+  }
+
+  // draw annotations on top
+  state.annotations.forEach(a => {
+    if(a.type === 'arrow'){
+      const x1=a.x1*pxPerMm, y1=a.y1*pxPerMm, x2=a.x2*pxPerMm, y2=a.y2*pxPerMm;
+      ctx.strokeStyle = '#d0231c';
+      ctx.lineWidth = 1.1 * pxPerMm;
+      ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+      const angle = Math.atan2(y2-y1, x2-x1);
+      const headLen = 3.2 * pxPerMm;
+      ctx.fillStyle = '#d0231c';
+      ctx.beginPath();
+      ctx.moveTo(x2, y2);
+      ctx.lineTo(x2 - headLen*Math.cos(angle-Math.PI/7), y2 - headLen*Math.sin(angle-Math.PI/7));
+      ctx.lineTo(x2 - headLen*Math.cos(angle+Math.PI/7), y2 - headLen*Math.sin(angle+Math.PI/7));
+      ctx.closePath(); ctx.fill();
+    } else if(a.type === 'circle'){
+      const cx=(a.x+a.w/2)*pxPerMm, cy=(a.y+a.h/2)*pxPerMm;
+      const rx=Math.abs(a.w/2)*pxPerMm, ry=Math.abs(a.h/2)*pxPerMm;
+      ctx.strokeStyle = '#d0231c';
+      ctx.fillStyle = 'rgba(224,70,58,0.08)';
+      ctx.lineWidth = 1.1 * pxPerMm;
+      ctx.beginPath(); ctx.ellipse(cx,cy,rx,ry,0,0,Math.PI*2);
+      ctx.fill(); ctx.stroke();
+    } else if(a.type === 'text'){
+      ctx.font = `700 ${4.2 * pxPerMm}px -apple-system, sans-serif`;
+      ctx.textBaseline = 'top';
+      const x = a.x*pxPerMm, y = a.y*pxPerMm;
+      const metrics = ctx.measureText(a.text);
+      const padX = 1.4*pxPerMm, padY = 0.6*pxPerMm;
+      ctx.fillStyle = 'rgba(255,255,255,0.82)';
+      ctx.fillRect(x, y, metrics.width + padX*2, 4.2*pxPerMm + padY*2);
+      ctx.fillStyle = '#d0231c';
+      ctx.fillText(a.text, x + padX, y + padY);
+    }
+  });
+
+  canvas.toBlob(blob => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `layout-${state.paper}-${state.orientation}.png`;
+    a.click();
+  }, 'image/png');
+});
+
+// ---------- print ----------
+document.getElementById('printBtn').addEventListener('click', () => {
+  const {w:paperW, h:paperH} = paperDimsMm();
+  const styleTag = document.getElementById('printPageStyle') || (() => {
+    const s = document.createElement('style');
+    s.id = 'printPageStyle';
+    document.head.appendChild(s);
+    return s;
+  })();
+  styleTag.textContent = `@page{ size: ${paperW}mm ${paperH}mm; margin:0; }`;
+
+  const prevTransform = paperEl.style.transform;
+  const prevWrapW = paperWrap.style.width, prevWrapH = paperWrap.style.height;
+  paperEl.style.transform = 'none';
+  paperWrap.style.width = paperW + 'mm';
+  paperWrap.style.height = paperH + 'mm';
+
+  function restore(){
+    paperEl.style.transform = prevTransform;
+    paperWrap.style.width = prevWrapW;
+    paperWrap.style.height = prevWrapH;
+    window.removeEventListener('afterprint', restore);
+  }
+  window.addEventListener('afterprint', restore);
+  // fallback in case 'afterprint' doesn't fire in some browsers
+  setTimeout(restore, 3000);
+
+  window.print();
+});
+
+setTool('select');
+layoutPaper();
+</script>
+</body>
+</html>
