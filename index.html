@@ -229,12 +229,13 @@
     touch-action:none;
     user-select:none;
     min-width:8mm;
-    border:0.3mm solid transparent;
+    border:0.5mm solid transparent; /* reserved space; color set inline when the user enables 枠線 */
+    box-shadow:none;
     white-space:pre-wrap;
   }
-  .anno-text-wrap.active .anno-text{ border-color:var(--accent); }
+  .anno-text-wrap.active .anno-text{ box-shadow:0 0 0 1.4px var(--accent); }
   .anno-text[contenteditable="true"]{
-    cursor:text; user-select:text; border-color:var(--accent);
+    cursor:text; user-select:text; box-shadow:0 0 0 1.4px var(--accent);
   }
   .anno-text-wrap .del{
     position:absolute; top:-9px; right:-9px;
@@ -344,6 +345,16 @@
       <button class="tool-btn" id="toolText" title="テキストを置く">T テキスト</button>
     </div>
 
+    <div class="group" id="styleGroup">
+      <label class="field">色
+        <input type="color" id="annoColor" value="#d0231c" title="選択中のオブジェクトの色（未選択時は次に作成する矢印・丸・テキストの色になります）">
+      </label>
+      <label class="field" id="textBorderRow" style="flex-direction:row; align-items:center; gap:6px; text-transform:none; letter-spacing:0; font-weight:600; font-size:12.5px; color:var(--ink);">
+        <input type="checkbox" id="textBorder" style="width:14px;height:14px; accent-color:var(--accent); cursor:pointer;">
+        枠線
+      </label>
+    </div>
+
     <div class="group">
       <button class="ghost danger" id="clearAll">すべて削除</button>
     </div>
@@ -426,11 +437,7 @@ let toolState = 'select'; // 'select' | 'arrow' | 'circle' | 'text'
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const annoSvg = document.createElementNS(SVG_NS, 'svg');
 annoSvg.setAttribute('class', 'anno-layer');
-annoSvg.innerHTML = `<defs>
-  <marker id="arrowhead" markerWidth="3.2" markerHeight="3.2" refX="2.6" refY="1.6" orient="auto">
-    <path d="M0,0 L3.2,1.6 L0,3.2 Z" fill="#d0231c"></path>
-  </marker>
-</defs>`;
+annoSvg.innerHTML = `<defs></defs>`;
 const annoTextLayer = document.createElement('div');
 annoTextLayer.className = 'anno-text-layer';
 paperEl.appendChild(annoSvg);
@@ -1051,6 +1058,40 @@ function clientToMm(clientX, clientY){
 
 function newAnnoId(){ return 'a' + Math.random().toString(36).slice(2,9); }
 
+// ---------- per-object color helpers ----------
+function hexToRgba(hex, alpha){
+  hex = (hex || '#d0231c').replace('#','');
+  if(hex.length === 3) hex = hex.split('').map(c => c+c).join('');
+  const r = parseInt(hex.substring(0,2), 16) || 0;
+  const g = parseInt(hex.substring(2,4), 16) || 0;
+  const b = parseInt(hex.substring(4,6), 16) || 0;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+// SVG <marker> arrowheads are colored via their own fill, not the line's
+// stroke, so each distinct arrow color needs its own marker definition.
+// Cached in <defs> and reused across renders/objects with the same color.
+function ensureArrowheadMarker(colorHex){
+  const hex = (colorHex || '#d0231c').replace('#','').toLowerCase();
+  const id = 'arrowhead-' + hex;
+  const defs = annoSvg.querySelector('defs');
+  if(!defs.querySelector('#' + id)){
+    const marker = document.createElementNS(SVG_NS, 'marker');
+    marker.setAttribute('id', id);
+    marker.setAttribute('markerWidth', '3.2');
+    marker.setAttribute('markerHeight', '3.2');
+    marker.setAttribute('refX', '2.6');
+    marker.setAttribute('refY', '1.6');
+    marker.setAttribute('orient', 'auto');
+    const path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('d', 'M0,0 L3.2,1.6 L0,3.2 Z');
+    path.setAttribute('fill', colorHex || '#d0231c');
+    marker.appendChild(path);
+    defs.appendChild(marker);
+  }
+  return id;
+}
+
 function highlightActiveAnnotation(){
   const activeId = activeAnnotation ? activeAnnotation.id : null;
   annoSvg.querySelectorAll('[data-anno-id]').forEach(el => {
@@ -1060,7 +1101,40 @@ function highlightActiveAnnotation(){
     el.classList.toggle('active', el.dataset.annoId === activeId);
   });
   if(activeAnnotation){ activeTile = null; renderTiles(); }
+  syncStyleControls();
 }
+
+// keep the toolbar's color/border controls in sync with whichever
+// annotation is currently selected (or, if none is selected, leave them
+// as the default that will be applied to the next arrow/circle/text
+// created). "枠線" only makes sense for text, so it's hidden otherwise.
+function syncStyleControls(){
+  const colorInput = document.getElementById('annoColor');
+  const borderInput = document.getElementById('textBorder');
+  const borderRow = document.getElementById('textBorderRow');
+  if(activeAnnotation){
+    colorInput.value = activeAnnotation.color || '#d0231c';
+    if(activeAnnotation.type === 'text'){
+      borderInput.checked = !!activeAnnotation.border;
+    }
+  }
+  const showBorderRow = toolState === 'text' || (activeAnnotation && activeAnnotation.type === 'text');
+  borderRow.style.display = showBorderRow ? '' : 'none';
+}
+
+document.getElementById('annoColor').addEventListener('change', () => {
+  if(!activeAnnotation) return;
+  pushHistory();
+  activeAnnotation.color = document.getElementById('annoColor').value;
+  renderAnnotations();
+});
+document.getElementById('textBorder').addEventListener('change', () => {
+  if(activeAnnotation && activeAnnotation.type === 'text'){
+    pushHistory();
+    activeAnnotation.border = document.getElementById('textBorder').checked;
+    renderAnnotations();
+  }
+});
 
 function renderAnnotations(){
   [...annoSvg.querySelectorAll(':scope > :not(defs)')].forEach(el => el.remove());
@@ -1068,27 +1142,29 @@ function renderAnnotations(){
 
   state.annotations.forEach(a => {
     if(a.type === 'arrow'){
+      const color = a.color || '#d0231c';
       const line = document.createElementNS(SVG_NS, 'line');
       line.setAttribute('x1', a.x1); line.setAttribute('y1', a.y1);
       line.setAttribute('x2', a.x2); line.setAttribute('y2', a.y2);
-      line.setAttribute('stroke', '#d0231c');
+      line.setAttribute('stroke', color);
       line.setAttribute('stroke-width', 1.1);
       line.setAttribute('stroke-linecap', 'round');
-      line.setAttribute('marker-end', 'url(#arrowhead)');
+      line.setAttribute('marker-end', `url(#${ensureArrowheadMarker(color)})`);
       line.setAttribute('class', 'anno-shape' + (a === activeAnnotation ? ' active' : ''));
       line.setAttribute('data-anno-id', a.id);
       line.style.pointerEvents = (toolState === 'select') ? 'auto' : 'none';
       line.addEventListener('pointerdown', e => startAnnoDrag(e, a));
       annoSvg.appendChild(line);
     } else if(a.type === 'circle'){
+      const color = a.color || '#d0231c';
       const ell = document.createElementNS(SVG_NS, 'ellipse');
       ell.setAttribute('cx', a.x + a.w/2);
       ell.setAttribute('cy', a.y + a.h/2);
       ell.setAttribute('rx', Math.abs(a.w/2));
       ell.setAttribute('ry', Math.abs(a.h/2));
-      ell.setAttribute('stroke', '#d0231c');
+      ell.setAttribute('stroke', color);
       ell.setAttribute('stroke-width', 1.1);
-      ell.setAttribute('fill', 'rgba(224,70,58,0.08)');
+      ell.setAttribute('fill', hexToRgba(color, 0.08));
       ell.setAttribute('class', 'anno-shape' + (a === activeAnnotation ? ' active' : ''));
       ell.setAttribute('data-anno-id', a.id);
       ell.style.pointerEvents = (toolState === 'select') ? 'auto' : 'none';
@@ -1104,6 +1180,9 @@ function renderAnnotations(){
       const div = document.createElement('div');
       div.className = 'anno-text';
       div.style.fontSize = '4.2mm';
+      const textColor = a.color || '#d0231c';
+      div.style.color = textColor;
+      div.style.borderColor = a.border ? textColor : 'transparent';
       div.textContent = a.text;
       div.addEventListener('dblclick', e => {
         e.stopPropagation();
@@ -1180,6 +1259,8 @@ function renderAnnotations(){
       annoTextLayer.appendChild(wrap);
     }
   });
+
+  syncStyleControls();
 }
 
 function startAnnoDrag(e, a){
@@ -1232,7 +1313,11 @@ annoTextLayer.addEventListener('pointerdown', e => {
 
   pushHistory();
   const {xMm, yMm} = clientToMm(e.clientX, e.clientY);
-  const a = { id:newAnnoId(), type:'text', x:xMm, y:yMm, text:'テキスト' };
+  const a = {
+    id:newAnnoId(), type:'text', x:xMm, y:yMm, text:'テキスト',
+    color: document.getElementById('annoColor').value,
+    border: document.getElementById('textBorder').checked,
+  };
   state.annotations.push(a);
   activeAnnotation = a;
   setTool('select');
@@ -1255,9 +1340,10 @@ annoSvg.addEventListener('pointerdown', e => {
 
   pushHistory();
   const start = clientToMm(e.clientX, e.clientY);
+  const currentColor = document.getElementById('annoColor').value;
   const a = (toolState === 'arrow')
-    ? { id:newAnnoId(), type:'arrow', x1:start.xMm, y1:start.yMm, x2:start.xMm, y2:start.yMm }
-    : { id:newAnnoId(), type:'circle', x:start.xMm, y:start.yMm, w:0, h:0 };
+    ? { id:newAnnoId(), type:'arrow', x1:start.xMm, y1:start.yMm, x2:start.xMm, y2:start.yMm, color:currentColor }
+    : { id:newAnnoId(), type:'circle', x:start.xMm, y:start.yMm, w:0, h:0, color:currentColor };
   state.annotations.push(a);
   let dragging = true;
 
@@ -1511,24 +1597,26 @@ document.getElementById('exportPng').addEventListener('click', async () => {
   // draw annotations on top
   state.annotations.forEach(a => {
     if(a.type === 'arrow'){
+      const color = a.color || '#d0231c';
       const x1=a.x1*pxPerMm, y1=a.y1*pxPerMm, x2=a.x2*pxPerMm, y2=a.y2*pxPerMm;
-      ctx.strokeStyle = '#d0231c';
+      ctx.strokeStyle = color;
       ctx.lineWidth = 1.1 * pxPerMm;
       ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
       const angle = Math.atan2(y2-y1, x2-x1);
       const headLen = 3.2 * pxPerMm;
-      ctx.fillStyle = '#d0231c';
+      ctx.fillStyle = color;
       ctx.beginPath();
       ctx.moveTo(x2, y2);
       ctx.lineTo(x2 - headLen*Math.cos(angle-Math.PI/7), y2 - headLen*Math.sin(angle-Math.PI/7));
       ctx.lineTo(x2 - headLen*Math.cos(angle+Math.PI/7), y2 - headLen*Math.sin(angle+Math.PI/7));
       ctx.closePath(); ctx.fill();
     } else if(a.type === 'circle'){
+      const color = a.color || '#d0231c';
       const cx=(a.x+a.w/2)*pxPerMm, cy=(a.y+a.h/2)*pxPerMm;
       const rx=Math.abs(a.w/2)*pxPerMm, ry=Math.abs(a.h/2)*pxPerMm;
-      ctx.strokeStyle = '#d0231c';
-      ctx.fillStyle = 'rgba(224,70,58,0.08)';
+      ctx.strokeStyle = color;
+      ctx.fillStyle = hexToRgba(color, 0.08);
       ctx.lineWidth = 1.1 * pxPerMm;
       ctx.beginPath(); ctx.ellipse(cx,cy,rx,ry,0,0,Math.PI*2);
       ctx.fill(); ctx.stroke();
@@ -1538,9 +1626,17 @@ document.getElementById('exportPng').addEventListener('click', async () => {
       const x = a.x*pxPerMm, y = a.y*pxPerMm;
       const metrics = ctx.measureText(a.text);
       const padX = 1.4*pxPerMm, padY = 0.6*pxPerMm;
+      const boxW = metrics.width + padX*2, boxH = 4.2*pxPerMm + padY*2;
+      const textColor = a.color || '#d0231c';
       ctx.fillStyle = 'rgba(255,255,255,0.82)';
-      ctx.fillRect(x, y, metrics.width + padX*2, 4.2*pxPerMm + padY*2);
-      ctx.fillStyle = '#d0231c';
+      ctx.fillRect(x, y, boxW, boxH);
+      if(a.border){
+        const borderW = 0.5 * pxPerMm;
+        ctx.strokeStyle = textColor;
+        ctx.lineWidth = borderW;
+        ctx.strokeRect(x + borderW/2, y + borderW/2, boxW - borderW, boxH - borderW);
+      }
+      ctx.fillStyle = textColor;
       ctx.fillText(a.text, x + padX, y + padY);
     }
   });
